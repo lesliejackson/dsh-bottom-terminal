@@ -1,0 +1,3 @@
+- insert:
+    - id: bottom-terminal
+      name: '@local/dsh-bottom-terminal'

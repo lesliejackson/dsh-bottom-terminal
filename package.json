@@ -1,0 +1,40 @@
+{
+  "name": "@local/dsh-bottom-terminal",
+  "version": "1.0.0",
+  "description": "Independent bottom terminal for DSH with raw PTY streaming, WebGL rendering and split panes.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/lesliejackson/dsh-bottom-terminal.git"
+  },
+  "keywords": ["dsh", "dsh-plugin", "terminal", "xterm"],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["index.js", "src/transport.js", "lib/", "locale/", "cordis.patch.yml", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-webgl": "0.19.0",
+    "@xterm/xterm": "6.0.0",
+    "esbuild": "0.28.2",
+    "ws": "8.21.3"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-shortcuts"
+      ]
+    }
+  }
+}
