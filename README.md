@@ -4,10 +4,10 @@
 
 ## 安装
 
-1. 在 DSH 打开「插件 → 添加插件」，填入 `local-dsh-bottom-terminal-1.3.1.tgz` 的本机绝对路径。
+1. 在 DSH 打开「插件 → 添加插件」，填入 `local-dsh-bottom-terminal-1.3.2.tgz` 的本机绝对路径。
 2. 按界面提示安装并启用，重启后底部会出现「终端」按钮。安装包已包含运行时依赖，可以离线安装。
 
-已配置 GitHub SSH 访问时，也可以在「添加插件」中输入 `git+ssh://git@github.com/lesliejackson/dsh-bottom-terminal.git#v1.3.1` 安装。
+已配置 GitHub SSH 访问时，也可以在「添加插件」中输入 `git+ssh://git@github.com/lesliejackson/dsh-bottom-terminal.git#v1.3.2` 安装。
 
 ## 设置与快捷键
 
