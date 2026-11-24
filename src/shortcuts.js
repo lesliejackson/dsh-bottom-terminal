@@ -11,13 +11,13 @@ const legacyShortcuts = [
 ]
 const controlShift = ['control', 'shift']
 const paneShortcuts = [
-  ['splitRight', 'Digit1', controlShift],
-  ['splitDown', 'Digit2', controlShift],
-  ['focusPaneLeft', 'ArrowLeft', controlShift],
-  ['focusPaneRight', 'ArrowRight', controlShift],
-  ['focusPaneUp', 'ArrowUp', controlShift],
-  ['focusPaneDown', 'ArrowDown', controlShift],
-  ['togglePaneZoom', 'KeyM', ['control']],
+  ['splitRight', 'Digit1', controlShift, 'Ctrl+Shift+1'],
+  ['splitDown', 'Digit2', controlShift, 'Ctrl+Shift+2'],
+  ['focusPaneLeft', 'ArrowLeft', controlShift, 'Ctrl+Shift+←'],
+  ['focusPaneRight', 'ArrowRight', controlShift, 'Ctrl+Shift+→'],
+  ['focusPaneUp', 'ArrowUp', controlShift, 'Ctrl+Shift+↑'],
+  ['focusPaneDown', 'ArrowDown', controlShift, 'Ctrl+Shift+↓'],
+  ['togglePaneZoom', 'KeyM', ['control'], 'Ctrl+M'],
 ]
 const paneKeys = new Set(paneShortcuts.map(([key]) => key))
 const globalKeys = new Set(['toggle', 'newTab', 'fullscreen'])
@@ -34,9 +34,7 @@ function matchesBinding(event, binding) {
 }
 
 export function registerShortcuts(service, t, actions) {
-  const profile = service.runtime + ':' + service.platform
-  const native = profile === 'desktop:windows' || profile === 'desktop:macos'
-  const linuxWeb = profile === 'web:linux'
+  const linuxWeb = service.runtime === 'web' && service.platform === 'linux'
   const disposers = []
   const paneBindings = new Map()
   const linuxBindings = new Map()
@@ -50,22 +48,21 @@ export function registerShortcuts(service, t, actions) {
     return actions.current?.[key]
   }
 
-  for (const [key, code, modifiers = ['primary', 'shift']] of [...legacyShortcuts, ...paneShortcuts]) {
-    const pane = paneKeys.has(key)
+  for (const [key, code, modifiers = ['primary', 'shift'], keyLabel] of [...legacyShortcuts, ...paneShortcuts]) {
+    const pane = keyLabel !== undefined
     const cyclic = key === 'previousPane' || key === 'nextPane'
-    const supported = pane || cyclic ? [...profiles, 'web:linux'] : profiles
+    const supported = cyclic ? [...profiles, 'web:linux'] : profiles
     const binding = { code, modifiers }
-    // Native defaults are consumed before DSH can check focus. Handle these defaults
-    // in the dock, as with combinations the browser registry does not admit.
-    const fallback = pane && (native || service.describeBinding(binding).issue !== null)
+    // DSH validates defaults for every profile at registration. Keep dock-scoped
+    // defaults local so they also pass through outside the dock on native desktop.
     const id = 'bottom-terminal.' + key
-    const defaults = Object.fromEntries(supported
-      .filter(value => !fallback || value !== profile)
-      .map(value => [value, binding]))
+    const defaults = pane ? {} : Object.fromEntries(supported.map(value => [value, binding]))
     try {
       disposers.push(service.register({
         id,
-        label: () => t(key), aliases: ['terminal'],
+        // The editor shows these rows as unbound, so the name carries the working default.
+        label: pane ? () => t('paneCommand', { name: t(key), keys: keyLabel }) : () => t(key),
+        aliases: pane ? ['terminal', '底栏终端', '分屏', keyLabel] : ['terminal'],
         defaults,
         regions: globalKeys.has(key) ? ['page', 'editable', 'terminal'] : ['page', 'terminal'],
         modals: [],
@@ -74,7 +71,7 @@ export function registerShortcuts(service, t, actions) {
           return run ? { status: 'handled', run } : { status: 'pass' }
         },
       }))
-      if (pane) paneBindings.set(id, { key, fallback: fallback ? binding : null })
+      if (pane) paneBindings.set(id, { key, binding })
       if (linuxWeb && !pane && !cyclic) linuxBindings.set(code, key)
     } catch (error) {
       console.warn('[bottom-terminal] Shortcut registration failed:', key, error)
@@ -93,9 +90,9 @@ export function registerShortcuts(service, t, actions) {
       for (const row of service.catalog.getSnapshot()) {
         const spec = paneBindings.get(row.id)
         if (!spec || row.issue !== null || row.conflicts.length) continue
-        const binding = row.modified ? row.binding : row.binding ?? spec.fallback
+        const binding = row.modified ? row.binding : spec.binding
         if (!binding || !matchesBinding(event, binding)) continue
-        if (!row.binding && service.describeBinding(binding).conflicts.length) continue
+        if (!row.modified && service.describeBinding(binding).conflicts.length) continue
         const run = resolve(spec.key, target)
         if (!run) return
         event.preventDefault()
