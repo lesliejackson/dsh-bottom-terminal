@@ -36,13 +36,15 @@ export function resizeSplit(node, id, ratio) {
 
 export function geometry(node) {
   const panes = new Map()
+  const paneBounds = new Map()
   const dividers = []
   function place(part, x, y, width, height) {
+    const bounds = { x, y, width, height }
     if (!part.first) {
       panes.set(part.id, { left: x + '%', top: y + '%', width: width + '%', height: height + '%' })
+      paneBounds.set(part.id, bounds)
       return
     }
-    const bounds = { x, y, width, height }
     if (part.axis === 'x') {
       const firstWidth = width * part.ratio
       dividers.push({ ...part, bounds, style: { left: x + firstWidth + '%', top: y + '%', height: height + '%' } })
@@ -56,5 +58,39 @@ export function geometry(node) {
     }
   }
   place(node, 0, 0, 100, 100)
-  return { panes, dividers }
+  return { panes, paneBounds, dividers }
+}
+
+export function adjacentPane(paneBounds, active, direction) {
+  const horizontal = direction === 'left' || direction === 'right'
+  const forward = direction === 'right' || direction === 'down'
+  const axis = horizontal ? 'x' : 'y'
+  const depth = horizontal ? 'width' : 'height'
+  const cross = horizontal ? 'y' : 'x'
+  const span = horizontal ? 'height' : 'width'
+  const source = paneBounds.get(active)
+  const edge = source[axis] + (forward ? source[depth] : 0)
+  const center = source[cross] + source[span] / 2
+  // Split ratios can place the same boundary at slightly different floating-point values.
+  const tolerance = 1e-9
+  let best
+  let bestOverlap = 0
+  let bestOffset = Infinity
+
+  for (const [id, pane] of paneBounds) {
+    if (id === active) continue
+    const opposite = pane[axis] + (forward ? 0 : pane[depth])
+    if (Math.abs(edge - opposite) > tolerance) continue
+    const overlap = Math.min(source[cross] + source[span], pane[cross] + pane[span])
+      - Math.max(source[cross], pane[cross])
+    if (overlap <= tolerance) continue
+    const offset = Math.abs(center - (pane[cross] + pane[span] / 2))
+    if (overlap > bestOverlap + tolerance
+        || (Math.abs(overlap - bestOverlap) <= tolerance && offset < bestOffset - tolerance)) {
+      best = id
+      bestOverlap = overlap
+      bestOffset = offset
+    }
+  }
+  return best
 }

@@ -138,6 +138,7 @@ html[data-platform="darwin"]:not([data-fullscreen]) .dsh-bottom-terminal[data-fu
 }
 
 .dsh-bottom-terminal .dbt-pane[data-active="true"] { border-top-color: var(--dbt-accent); }
+.dsh-bottom-terminal[data-pane-zoomed] .dbt-pane[data-active="true"] { inset: 0; }
 
 .dsh-bottom-terminal .dbt-pane-info {
   display: flex;

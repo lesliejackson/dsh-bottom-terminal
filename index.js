@@ -1,5 +1,5 @@
 import websocket from './lib/ws.cjs'
-import { MAX_TERMINALS, PATH, serveTerminal } from './src/transport.js'
+import { PATH, serveTerminal } from './src/transport.js'
 
 const { WebSocketServer } = websocket
 
@@ -64,10 +64,6 @@ export function apply(ctx) {
         // narrower capabilities even when their HTTP authentication succeeds.
         if (!admission.peer || admission.peer !== ctx.connection.browserPeer || !req.headers.origin) {
           socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
-          return
-        }
-        if (tasks.size >= MAX_TERMINALS) {
-          socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n')
           return
         }
         server.handleUpgrade(req, socket, head, ws => {

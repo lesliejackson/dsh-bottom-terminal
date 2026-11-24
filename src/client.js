@@ -2,23 +2,13 @@ import React from 'react'
 import xtermCss from '@xterm/xterm/css/xterm.css'
 import panelCss from './panel.css'
 import { readPreferences, savePreferences, themes } from './appearance.js'
-import { geometry, leaf, leaves, removePane, resizeSplit, splitPane } from './layout.js'
+import { adjacentPane, geometry, leaf, leaves, removePane, resizeSplit, splitPane } from './layout.js'
 import { mountScreen } from './screen.js'
-import { MAX_TERMINALS, SHELLS } from './transport.js'
+import { SHELLS } from './transport.js'
+import { registerShortcuts } from './shortcuts.js'
 import { en, zh } from './labels.js'
 
 const { createElement: h, useEffect, useLayoutEffect, useRef, useState } = React
-const profiles = ['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:macos', 'web:windows']
-const shortcuts = [
-  ['toggle', 'Backquote'],
-  ['newTab', 'Backslash'],
-  ['closeActiveTab', 'Digit9'],
-  ['fullscreen', 'Quote'],
-  ['previousTab', 'BracketLeft'],
-  ['nextTab', 'BracketRight'],
-  ['previousPane', 'Comma'],
-  ['nextPane', 'Period'],
-]
 const selectedSession = state => Object.values(state.byId).find(item => item.retainedBy?.mainView > 0)?.id
 
 function glyph(key) {
@@ -162,7 +152,9 @@ function BottomTerminal({ useSessions, t, actions }) {
   const workspace = useRef(null)
   const fullscreen = open && fullscreenMode
   const tab = tabs.find(entry => entry.id === selected)
-  const paneCount = tabs.reduce((total, entry) => total + entry.panes.length, 0)
+  const hasSplits = (tab?.panes.length ?? 0) > 1
+  const zoomed = hasSplits && tab.zoomed
+  const rects = tab ? geometry(tab.tree) : null
 
   function change(update) { setPreferences(current => ({ ...current, ...update })) }
   useEffect(() => { savePreferences(preferences) }, [preferences])
@@ -172,7 +164,6 @@ function BottomTerminal({ useSessions, t, actions }) {
   }
 
   function addTab() {
-    if (paneCount >= MAX_TERMINALS) return
     const pane = newPane()
     setTabs(current => [...current, { id: pane.id, tree: leaf(pane.id), active: pane.id, panes: [pane] }])
     setSelected(pane.id)
@@ -208,12 +199,15 @@ function BottomTerminal({ useSessions, t, actions }) {
   }
 
   function addSplit(axis) {
-    if (!tab || paneCount >= MAX_TERMINALS) return
     const pane = newPane()
     updateTab(tab.id, entry => ({
       ...entry, tree: splitPane(entry.tree, entry.active, pane.id, axis),
-      active: pane.id, panes: [...entry.panes, pane],
+      active: pane.id, panes: [...entry.panes, pane], zoomed: false,
     }))
+  }
+
+  function togglePaneZoom() {
+    updateTab(tab.id, entry => ({ ...entry, zoomed: !entry.zoomed }))
   }
 
   function closeTab(id) {
@@ -232,7 +226,7 @@ function BottomTerminal({ useSessions, t, actions }) {
     const after = leaves(tree)
     const active = after[Math.min(before.indexOf(tab.active), after.length - 1)]
     updateTab(tab.id, entry => ({
-      ...entry, tree, active, panes: entry.panes.filter(pane => pane.id !== entry.active),
+      ...entry, tree, active, panes: entry.panes.filter(pane => pane.id !== entry.active), zoomed: false,
     }))
   }
 
@@ -252,6 +246,11 @@ function BottomTerminal({ useSessions, t, actions }) {
   function switchPane(offset) {
     const ids = leaves(tab.tree)
     selectPane(circular(ids, ids.indexOf(tab.active), offset))
+  }
+
+  function focusAdjacentPane(direction) {
+    const next = adjacentPane(rects.paneBounds, tab.active, direction)
+    if (next !== undefined) selectPane(next)
   }
 
   function beginRename(id) {
@@ -280,20 +279,30 @@ function BottomTerminal({ useSessions, t, actions }) {
     } else if (open && tab && !settings && renaming === null) {
       screens.get(tab.active)?.focus()
     }
-  }, [open, selected, tab?.active, fullscreen, settings, renaming, screens])
+  }, [open, selected, tab?.active, fullscreen, zoomed, settings, renaming, screens])
 
   useLayoutEffect(() => {
     const canSwitchTabs = open && tabs.length > 1
-    const canSwitchPanes = open && (tab?.panes.length ?? 0) > 1
+    const canSwitchPanes = open && hasSplits
+    const canUsePaneShortcuts = open && tab && !settings && renaming === null
     actions.current = {
       toggle,
-      newTab: paneCount < MAX_TERMINALS ? addTab : undefined,
-      closeActiveTab: open && tab && !settings && renaming === null ? () => closeTab(tab.id) : undefined,
+      newTab: addTab,
+      closeActiveTab: canUsePaneShortcuts ? () => closeTab(tab.id) : undefined,
       fullscreen: toggleFullscreen,
       previousTab: canSwitchTabs ? () => switchTab(-1) : undefined,
       nextTab: canSwitchTabs ? () => switchTab(1) : undefined,
       previousPane: canSwitchPanes ? () => switchPane(-1) : undefined,
       nextPane: canSwitchPanes ? () => switchPane(1) : undefined,
+      splitRight: canUsePaneShortcuts ? () => addSplit('x') : undefined,
+      splitDown: canUsePaneShortcuts ? () => addSplit('y') : undefined,
+      ...(canUsePaneShortcuts && hasSplits ? {
+        focusPaneLeft: () => focusAdjacentPane('left'),
+        focusPaneRight: () => focusAdjacentPane('right'),
+        focusPaneUp: () => focusAdjacentPane('up'),
+        focusPaneDown: () => focusAdjacentPane('down'),
+        togglePaneZoom,
+      } : {}),
     }
     return () => { actions.current = undefined }
   })
@@ -328,8 +337,6 @@ function BottomTerminal({ useSessions, t, actions }) {
   }
 
   const theme = themes[preferences.theme]
-  const rects = tab ? geometry(tab.tree) : null
-  const atLimit = paneCount >= MAX_TERMINALS
   const closeSettings = () => { setSettings(false); settingsButton.current?.focus() }
 
   function tabButton(entry) {
@@ -355,6 +362,7 @@ function BottomTerminal({ useSessions, t, actions }) {
   return h('section', {
     ref: dock, className: 'dsh-bottom-terminal', 'aria-label': t('bottomTerminal'), 'data-open': open,
     'data-fullscreen': fullscreen || undefined,
+    'data-pane-zoomed': zoomed || undefined,
     style: {
       '--dbt-bg': theme.terminal.background, '--dbt-fg': theme.terminal.foreground,
       '--dbt-bar': theme.chrome, '--dbt-border': theme.border, '--dbt-accent': theme.accent,
@@ -377,9 +385,11 @@ function BottomTerminal({ useSessions, t, actions }) {
     open && h('div', { className: 'dbt-tabs', role: 'tablist', 'aria-label': t('terminalTabs') },
       tabs.map(tabButton)),
     open && h('div', { className: 'dbt-tools' },
-      tool(atLimit ? t('limit') : t('newTab'), '+', addTab, { disabled: atLimit }),
-      tool(t('splitRight'), '◫', () => addSplit('x'), { disabled: atLimit || !tab }),
-      tool(t('splitDown'), '⬓', () => addSplit('y'), { disabled: atLimit || !tab }),
+      tool(t('newTab'), '+', addTab),
+      tool(t('splitRight'), '◫', () => addSplit('x'), { disabled: !tab }),
+      tool(t('splitDown'), '⬓', () => addSplit('y'), { disabled: !tab }),
+      hasSplits && tool(t(zoomed ? 'restorePane' : 'zoomPane'), zoomed ? '⊟' : '⊞', togglePaneZoom,
+        { 'aria-pressed': !!zoomed }),
       tool(t('renameTab'), '✎', () => beginRename(tab.id), { disabled: !tab }),
       tool(t('closePane'), '×', closePane, { disabled: !tab }),
       tool(t(fullscreen ? 'restorePanel' : 'expandPanel'), fullscreen ? '↙' : '⛶', toggleFullscreen),
@@ -387,11 +397,12 @@ function BottomTerminal({ useSessions, t, actions }) {
   h('div', { className: 'dbt-workspace', hidden: !open, ref: workspace },
     tabs.flatMap(entry => entry.panes.map(pane => h(Pane, {
       key: pane.id, pane, t, preferences, screens,
-      shown: open && entry.id === selected, active: entry.id === selected && entry.active === pane.id,
-      style: entry.id === selected ? rects?.panes.get(pane.id) : undefined,
+      shown: open && entry.id === selected && (!zoomed || entry.active === pane.id),
+      active: entry.id === selected && entry.active === pane.id,
+      style: entry.id === selected && !zoomed ? rects.panes.get(pane.id) : undefined,
       select: selectPane, restart: () => restartPane(entry.id, pane.id),
     }))),
-    open && rects?.dividers.map(divider),
+    open && !zoomed && rects?.dividers.map(divider),
     open && !tab && h('button', { className: 'dbt-empty', type: 'button', onClick: addTab }, t('newTab'))),
   open && settings && h(Settings, { preferences, change, close: closeSettings, t }))
 }
@@ -412,54 +423,9 @@ export function apply(ctx) {
     const style = document.createElement('style')
     style.textContent = panelCss + '\n@scope (.dsh-bottom-terminal) {\n' + xtermCss + '\n}'
     document.head.append(style)
-    const globalKeys = new Set(['toggle', 'newTab', 'fullscreen'])
-    function resolve(key, target) {
-      if (key === 'closeActiveTab' && !target?.closest('.dsh-bottom-terminal')) return undefined
-      if (!globalKeys.has(key) && target?.closest('.xterm') && !target.closest('.dsh-bottom-terminal')) return undefined
-      return actions.current?.[key]
-    }
-    const disposers = []
-    const linuxBindings = new Map()
-    for (const [key, code] of shortcuts) {
-      const webLinux = key.endsWith('Pane')
-      const supported = webLinux ? [...profiles, 'web:linux'] : profiles
-      const binding = { code, modifiers: ['primary', 'shift'] }
-      try {
-        disposers.push(ctx.shortcuts.register({
-          id: 'bottom-terminal.' + key,
-          label: () => t(key), aliases: ['terminal'],
-          defaults: Object.fromEntries(supported.map(profile => [profile, binding])),
-          regions: globalKeys.has(key) ? ['page', 'editable', 'terminal'] : ['page', 'terminal'],
-          modals: [],
-          resolve({ modal, target }) {
-            const run = modal === null ? resolve(key, target) : undefined
-            return run ? { status: 'handled', run } : { status: 'pass' }
-          },
-        }))
-        if (!webLinux) linuxBindings.set(code, key)
-      } catch (error) {
-        console.warn('[bottom-terminal] Shortcut registration failed:', key, error)
-      }
-    }
-    function linuxKeydown(event) {
-      if (event.defaultPrevented || event.isComposing || event.repeat
-        || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
-      const key = linuxBindings.get(event.code)
-      const target = event.target instanceof Element ? event.target : null
-      if (!key || target?.closest('[role="dialog"]')) return
-      if (!globalKeys.has(key) && !target?.closest('.dsh-bottom-terminal')
-        && target?.closest('input, textarea, [contenteditable="true"]')) return
-      const run = resolve(key, target)
-      if (!run) return
-      event.preventDefault()
-      event.stopPropagation()
-      run()
-    }
-    const linuxWeb = ctx.shortcuts.runtime === 'web' && ctx.shortcuts.platform === 'linux'
-    if (linuxWeb) window.addEventListener('keydown', linuxKeydown, true)
+    const unregister = registerShortcuts(ctx.shortcuts, t, actions)
     return () => {
-      if (linuxWeb) window.removeEventListener('keydown', linuxKeydown, true)
-      for (const dispose of disposers) dispose()
+      unregister()
       style.remove()
     }
   }, 'bottom-terminal: stylesheet and keyboard shortcuts')

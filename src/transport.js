@@ -1,5 +1,4 @@
 export const PATH = '/bottom-terminal/pty'
-export const MAX_TERMINALS = 8
 export const MAX_COLS = 500
 export const MAX_ROWS = 200
 export const SHELLS = ['default', 'pwsh', 'powershell', 'cmd', 'wsl', 'bash', 'zsh', 'fish']
