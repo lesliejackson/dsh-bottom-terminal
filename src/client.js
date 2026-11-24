@@ -12,6 +12,7 @@ const profiles = ['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:maco
 const shortcuts = [
   ['toggle', 'Backquote'],
   ['newTab', 'Backslash'],
+  ['closeActiveTab', 'Digit9'],
   ['fullscreen', 'Quote'],
   ['previousTab', 'BracketLeft'],
   ['nextTab', 'BracketRight'],
@@ -154,6 +155,7 @@ function BottomTerminal({ useSessions, t, actions }) {
   const [renaming, setRenaming] = useState(null)
   const counter = useRef(0)
   const screens = useRef(new Map()).current
+  const wasOpen = useRef(false)
   const button = useRef(null)
   const settingsButton = useRef(null)
   const dock = useRef(null)
@@ -184,7 +186,6 @@ function BottomTerminal({ useSessions, t, actions }) {
     if (open) {
       setRenaming(null)
       setSettings(false)
-      button.current.focus()
     }
   }
 
@@ -269,7 +270,16 @@ function BottomTerminal({ useSessions, t, actions }) {
   }
 
   useLayoutEffect(() => {
-    if (open && tab && !settings && renaming === null) screens.get(tab.active)?.focus()
+    const collapsed = wasOpen.current && !open
+    wasOpen.current = open
+    if (collapsed) {
+      const document = button.current.ownerDocument
+      const composer = document.querySelector('[data-slot="main.conversation"] [data-composer-input][contenteditable="true"]')
+      composer?.focus({ preventScroll: true })
+      if (!composer || document.activeElement !== composer) button.current.focus()
+    } else if (open && tab && !settings && renaming === null) {
+      screens.get(tab.active)?.focus()
+    }
   }, [open, selected, tab?.active, fullscreen, settings, renaming, screens])
 
   useLayoutEffect(() => {
@@ -278,6 +288,7 @@ function BottomTerminal({ useSessions, t, actions }) {
     actions.current = {
       toggle,
       newTab: paneCount < MAX_TERMINALS ? addTab : undefined,
+      closeActiveTab: open && tab && !settings && renaming === null ? () => closeTab(tab.id) : undefined,
       fullscreen: toggleFullscreen,
       previousTab: canSwitchTabs ? () => switchTab(-1) : undefined,
       nextTab: canSwitchTabs ? () => switchTab(1) : undefined,
@@ -403,6 +414,7 @@ export function apply(ctx) {
     document.head.append(style)
     const globalKeys = new Set(['toggle', 'newTab', 'fullscreen'])
     function resolve(key, target) {
+      if (key === 'closeActiveTab' && !target?.closest('.dsh-bottom-terminal')) return undefined
       if (!globalKeys.has(key) && target?.closest('.xterm') && !target.closest('.dsh-bottom-terminal')) return undefined
       return actions.current?.[key]
     }
