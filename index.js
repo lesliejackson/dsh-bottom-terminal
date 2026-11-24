@@ -12,7 +12,8 @@ const profiles = {
   pwsh: ['pwsh', '-NoLogo'],
   powershell: ['powershell.exe', '-NoLogo'],
   cmd: ['cmd.exe'],
-  wsl: ['wsl.exe', '--cd', '.'],
+  // WSL maps the inherited Windows PTY working directory to a Linux path.
+  wsl: ['wsl.exe'],
 }
 
 async function spawn(ctx, request, signal) {
