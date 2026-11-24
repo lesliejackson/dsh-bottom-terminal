@@ -147,7 +147,7 @@ function BottomTerminal({ useSessions, t, actions }) {
   const sessionId = useSessions(selectedSession)
   const [preferences, setPreferences] = useState(readPreferences)
   const [open, setOpen] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
+  const [fullscreenMode, setFullscreenMode] = useState(false)
   const [settings, setSettings] = useState(false)
   const [tabs, setTabs] = useState([])
   const [selected, setSelected] = useState(null)
@@ -158,6 +158,7 @@ function BottomTerminal({ useSessions, t, actions }) {
   const settingsButton = useRef(null)
   const dock = useRef(null)
   const workspace = useRef(null)
+  const fullscreen = open && fullscreenMode
   const tab = tabs.find(entry => entry.id === selected)
   const paneCount = tabs.reduce((total, entry) => total + entry.panes.length, 0)
 
@@ -181,7 +182,6 @@ function BottomTerminal({ useSessions, t, actions }) {
     if (!open && tabs.length === 0) { addTab(); return }
     setOpen(!open)
     if (open) {
-      setFullscreen(false)
       setRenaming(null)
       setSettings(false)
       button.current.focus()
@@ -190,12 +190,12 @@ function BottomTerminal({ useSessions, t, actions }) {
 
   function toggleFullscreen() {
     if (fullscreen) {
-      setFullscreen(false)
+      setFullscreenMode(false)
       return
     }
     if (tabs.length === 0) addTab()
     else setOpen(true)
-    setFullscreen(true)
+    setFullscreenMode(true)
   }
 
   function updateTab(id, update) {
