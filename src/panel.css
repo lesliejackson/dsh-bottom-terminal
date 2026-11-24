@@ -15,6 +15,26 @@
   min-height: 144px;
 }
 
+/* Expand the bottom track inside the DSH frame so window chrome and overlays
+   retain their placement while the same terminal elements fill the workspace. */
+:has(> [data-shell-bottom] .dsh-bottom-terminal[data-fullscreen]) {
+  grid-template-rows: 0 minmax(0, 1fr);
+}
+
+:has(> [data-shell-bottom] .dsh-bottom-terminal[data-fullscreen])
+  > :not([data-shell-bottom], [data-shell-overlay]) {
+  visibility: hidden;
+}
+
+.dsh-bottom-terminal[data-fullscreen] {
+  height: 100%;
+  min-height: 0;
+}
+
+html[data-platform="darwin"]:not([data-fullscreen]) .dsh-bottom-terminal[data-fullscreen] {
+  padding-top: var(--dsh-frame-top-clearance, 48px);
+}
+
 .dsh-bottom-terminal [hidden] { display: none !important; }
 
 .dsh-bottom-terminal button {
@@ -76,6 +96,24 @@
 .dsh-bottom-terminal .dbt-tab[data-selected="true"] {
   background: var(--dbt-bg);
   border-bottom-color: var(--dbt-accent);
+}
+
+.dsh-bottom-terminal .dbt-tab > [role="tab"] {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsh-bottom-terminal .dbt-tab-name {
+  box-sizing: border-box;
+  width: 150px;
+  height: 24px;
+  padding-inline: 5px;
+  border: 1px solid var(--dbt-accent);
+  border-radius: 4px;
+  color: inherit;
+  background: var(--dbt-bg);
+  font: inherit;
 }
 
 .dsh-bottom-terminal .dbt-tab > button:last-child { min-width: 19px; padding-inline: 3px; }

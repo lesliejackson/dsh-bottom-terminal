@@ -11,6 +11,8 @@ const { createElement: h, useEffect, useLayoutEffect, useRef, useState } = React
 const profiles = ['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:macos', 'web:windows']
 const shortcuts = [
   ['toggle', 'Backquote'],
+  ['newTab', 'Backslash'],
+  ['fullscreen', 'Quote'],
   ['previousTab', 'BracketLeft'],
   ['nextTab', 'BracketRight'],
   ['previousPane', 'Comma'],
@@ -120,13 +122,36 @@ function Settings({ preferences, change, close, t }) {
   h('button', { className: 'dbt-done', type: 'button', onClick: close }, t('done')))
 }
 
+function TabNameEditor({ name, t, save, cancel }) {
+  const input = useRef(null)
+  useLayoutEffect(() => {
+    input.current.focus()
+    input.current.select()
+  }, [])
+
+  return h('input', {
+    className: 'dbt-tab-name', ref: input, defaultValue: name, maxLength: 64,
+    'aria-label': t('tabName'), spellCheck: false, onBlur: cancel,
+    onKeyDown(event) {
+      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+      if (event.key !== 'Enter' && event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.key === 'Enter') save(event.currentTarget.value)
+      else cancel()
+    },
+  })
+}
+
 function BottomTerminal({ useSessions, t, actions }) {
   const sessionId = useSessions(selectedSession)
   const [preferences, setPreferences] = useState(readPreferences)
   const [open, setOpen] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
   const [settings, setSettings] = useState(false)
   const [tabs, setTabs] = useState([])
   const [selected, setSelected] = useState(null)
+  const [renaming, setRenaming] = useState(null)
   const counter = useRef(0)
   const screens = useRef(new Map()).current
   const button = useRef(null)
@@ -148,6 +173,7 @@ function BottomTerminal({ useSessions, t, actions }) {
     const pane = newPane()
     setTabs(current => [...current, { id: pane.id, tree: leaf(pane.id), active: pane.id, panes: [pane] }])
     setSelected(pane.id)
+    setRenaming(null)
     setOpen(true)
   }
 
@@ -155,9 +181,21 @@ function BottomTerminal({ useSessions, t, actions }) {
     if (!open && tabs.length === 0) { addTab(); return }
     setOpen(!open)
     if (open) {
+      setFullscreen(false)
+      setRenaming(null)
       setSettings(false)
       button.current.focus()
     }
+  }
+
+  function toggleFullscreen() {
+    if (fullscreen) {
+      setFullscreen(false)
+      return
+    }
+    if (tabs.length === 0) addTab()
+    else setOpen(true)
+    setFullscreen(true)
   }
 
   function updateTab(id, update) {
@@ -181,6 +219,7 @@ function BottomTerminal({ useSessions, t, actions }) {
     const index = tabs.findIndex(entry => entry.id === id)
     const next = tabs.filter(entry => entry.id !== id)
     setTabs(next)
+    finishRename(id)
     if (selected === id) setSelected((next[index] ?? next[index - 1])?.id ?? null)
     if (next.length === 0) button.current.focus()
   }
@@ -205,6 +244,7 @@ function BottomTerminal({ useSessions, t, actions }) {
 
   function switchTab(offset) {
     const next = circular(tabs, tabs.indexOf(tab), offset)
+    setRenaming(null)
     setSelected(next.id)
   }
 
@@ -213,20 +253,38 @@ function BottomTerminal({ useSessions, t, actions }) {
     selectPane(circular(ids, ids.indexOf(tab.active), offset))
   }
 
-  useLayoutEffect(() => {
-    if (open && tab && !settings) screens.get(tab.active)?.focus()
-  }, [open, selected, tab?.active, settings, screens])
+  function beginRename(id) {
+    setSettings(false)
+    setSelected(id)
+    setRenaming(id)
+  }
+
+  function finishRename(id) {
+    setRenaming(current => current === id ? null : current)
+  }
+
+  function renameTab(id, value) {
+    updateTab(id, entry => ({ ...entry, name: value.trim() || undefined }))
+    finishRename(id)
+  }
 
   useLayoutEffect(() => {
-    actions.toggle = toggle
-    actions.switch = open && tab ? key => {
-      if (key === 'previousTab') switchTab(-1)
-      if (key === 'nextTab') switchTab(1)
-      if (key === 'previousPane') switchPane(-1)
-      if (key === 'nextPane') switchPane(1)
-    } : undefined
-    actions.canSwitch = key => key.endsWith('Tab') ? tabs.length > 1 : (tab?.panes.length ?? 0) > 1
-    return () => { actions.toggle = undefined; actions.switch = undefined; actions.canSwitch = undefined }
+    if (open && tab && !settings && renaming === null) screens.get(tab.active)?.focus()
+  }, [open, selected, tab?.active, fullscreen, settings, renaming, screens])
+
+  useLayoutEffect(() => {
+    const canSwitchTabs = open && tabs.length > 1
+    const canSwitchPanes = open && (tab?.panes.length ?? 0) > 1
+    actions.current = {
+      toggle,
+      newTab: paneCount < MAX_TERMINALS ? addTab : undefined,
+      fullscreen: toggleFullscreen,
+      previousTab: canSwitchTabs ? () => switchTab(-1) : undefined,
+      nextTab: canSwitchTabs ? () => switchTab(1) : undefined,
+      previousPane: canSwitchPanes ? () => switchPane(-1) : undefined,
+      nextPane: canSwitchPanes ? () => switchPane(1) : undefined,
+    }
+    return () => { actions.current = undefined }
   })
 
   function dragHeight(event) {
@@ -263,15 +321,36 @@ function BottomTerminal({ useSessions, t, actions }) {
   const atLimit = paneCount >= MAX_TERMINALS
   const closeSettings = () => { setSettings(false); settingsButton.current?.focus() }
 
+  function tabButton(entry) {
+    const name = entry.name ?? t('terminal') + ' ' + entry.id
+    return h('div', { className: 'dbt-tab', key: entry.id, 'data-selected': selected === entry.id },
+      renaming === entry.id
+        ? h(TabNameEditor, {
+          name, t, save: value => renameTab(entry.id, value), cancel: () => finishRename(entry.id),
+        })
+        : h('button', {
+          type: 'button', role: 'tab', title: name, 'aria-selected': selected === entry.id,
+          onClick: () => { setSelected(entry.id); screens.get(entry.active)?.focus() },
+          onDoubleClick: () => beginRename(entry.id),
+          onKeyDown(event) {
+            if (event.key !== 'F2') return
+            event.preventDefault()
+            beginRename(entry.id)
+          },
+        }, name),
+      tool(t('closeTab'), '×', () => closeTab(entry.id)))
+  }
+
   return h('section', {
     ref: dock, className: 'dsh-bottom-terminal', 'aria-label': t('bottomTerminal'), 'data-open': open,
+    'data-fullscreen': fullscreen || undefined,
     style: {
       '--dbt-bg': theme.terminal.background, '--dbt-fg': theme.terminal.foreground,
       '--dbt-bar': theme.chrome, '--dbt-border': theme.border, '--dbt-accent': theme.accent,
       '--dbt-height': preferences.height + 'px',
     },
   },
-  open && h('div', {
+  open && !fullscreen && h('div', {
     className: 'dbt-height', role: 'separator', tabIndex: 0, 'aria-label': t('resizePanel'),
     'aria-orientation': 'horizontal', onPointerDown: dragHeight,
     onKeyDown(event) {
@@ -285,17 +364,14 @@ function BottomTerminal({ useSessions, t, actions }) {
     h('button', { type: 'button', ref: button, className: 'dbt-title', onClick: toggle, 'aria-expanded': open },
       glyph('›_'), t('terminal'), glyph(open ? '⌄' : '⌃')),
     open && h('div', { className: 'dbt-tabs', role: 'tablist', 'aria-label': t('terminalTabs') },
-      tabs.map(entry => h('div', { className: 'dbt-tab', key: entry.id, 'data-selected': selected === entry.id },
-        h('button', {
-          type: 'button', role: 'tab', 'aria-selected': selected === entry.id,
-          onClick: () => { setSelected(entry.id); screens.get(entry.active)?.focus() },
-        }, t('terminal') + ' ' + entry.id),
-        tool(t('closeTab'), '×', () => closeTab(entry.id))))),
+      tabs.map(tabButton)),
     open && h('div', { className: 'dbt-tools' },
       tool(atLimit ? t('limit') : t('newTab'), '+', addTab, { disabled: atLimit }),
       tool(t('splitRight'), '◫', () => addSplit('x'), { disabled: atLimit || !tab }),
       tool(t('splitDown'), '⬓', () => addSplit('y'), { disabled: atLimit || !tab }),
+      tool(t('renameTab'), '✎', () => beginRename(tab.id), { disabled: !tab }),
       tool(t('closePane'), '×', closePane, { disabled: !tab }),
+      tool(t(fullscreen ? 'restorePanel' : 'expandPanel'), fullscreen ? '↙' : '⛶', toggleFullscreen),
       tool(t('appearance'), '⚙', () => setSettings(!settings), { ref: settingsButton, 'aria-expanded': settings }))),
   h('div', { className: 'dbt-workspace', hidden: !open, ref: workspace },
     tabs.flatMap(entry => entry.panes.map(pane => h(Pane, {
@@ -325,10 +401,10 @@ export function apply(ctx) {
     const style = document.createElement('style')
     style.textContent = panelCss + '\n@scope (.dsh-bottom-terminal) {\n' + xtermCss + '\n}'
     document.head.append(style)
+    const globalKeys = new Set(['toggle', 'newTab', 'fullscreen'])
     function resolve(key, target) {
-      if (key === 'toggle') return actions.toggle
-      if (target?.closest('.xterm') && !target.closest('.dsh-bottom-terminal')) return undefined
-      if (actions.switch && actions.canSwitch(key)) return () => actions.switch?.(key)
+      if (!globalKeys.has(key) && target?.closest('.xterm') && !target.closest('.dsh-bottom-terminal')) return undefined
+      return actions.current?.[key]
     }
     const disposers = []
     const linuxBindings = new Map()
@@ -341,7 +417,7 @@ export function apply(ctx) {
           id: 'bottom-terminal.' + key,
           label: () => t(key), aliases: ['terminal'],
           defaults: Object.fromEntries(supported.map(profile => [profile, binding])),
-          regions: key === 'toggle' ? ['page', 'editable', 'terminal'] : ['page', 'terminal'],
+          regions: globalKeys.has(key) ? ['page', 'editable', 'terminal'] : ['page', 'terminal'],
           modals: [],
           resolve({ modal, target }) {
             const run = modal === null ? resolve(key, target) : undefined
@@ -359,7 +435,7 @@ export function apply(ctx) {
       const key = linuxBindings.get(event.code)
       const target = event.target instanceof Element ? event.target : null
       if (!key || target?.closest('[role="dialog"]')) return
-      if (key !== 'toggle' && !target?.closest('.dsh-bottom-terminal')
+      if (!globalKeys.has(key) && !target?.closest('.dsh-bottom-terminal')
         && target?.closest('input, textarea, [contenteditable="true"]')) return
       const run = resolve(key, target)
       if (!run) return
