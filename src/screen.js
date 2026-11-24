@@ -138,18 +138,26 @@ export function mountScreen(element, options, onStatus) {
   const observer = new ResizeObserver(scheduleFit)
   observer.observe(element)
   document.fonts?.addEventListener('loadingdone', scheduleFit)
+  function copySelection() {
+    const clipboard = navigator.clipboard
+    if (!clipboard || !term.hasSelection()) return false
+    const text = term.getSelection()
+    if (text === '') return false
+    void clipboard.writeText(text).catch(error => {
+      console.debug('[bottom-terminal] Clipboard write failed', error)
+    })
+    return true
+  }
+
+  // For mouse selections, xterm emits this event when the gesture ends.
+  const selectionChange = term.onSelectionChange(copySelection)
   // xterm handles normal paste and IME. Copying a selection never takes Ctrl+C
   // away from the shell, and the browser keeps its usual Ctrl+V / Cmd+V path.
   term.attachCustomKeyEventHandler(event => {
     if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return true
-    if (event.code === 'KeyC' && term.hasSelection() && navigator.clipboard) {
-      event.preventDefault()
-      void navigator.clipboard.writeText(term.getSelection()).catch(error => {
-        console.debug('[bottom-terminal] Clipboard write failed', error)
-      })
-      return false
-    }
-    return true
+    if (event.code !== 'KeyC' || !copySelection()) return true
+    event.preventDefault()
+    return false
   })
   term.onData(data => {
     if (!ready) return
@@ -184,6 +192,7 @@ export function mountScreen(element, options, onStatus) {
       observer.disconnect()
       document.fonts?.removeEventListener('loadingdone', scheduleFit)
       socket?.close()
+      selectionChange.dispose()
       term.dispose()
     },
   }

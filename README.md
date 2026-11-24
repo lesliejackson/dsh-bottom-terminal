@@ -13,6 +13,8 @@
 
 在底栏的齿轮菜单里可选择 Graphite、Dracula、Solarized Dark、Paper，填写字体或字体回退列表，以及调整 9–32 px 字号。设置保存在当前 DSH 客户端，可选择自动渲染或 DOM 模式。Shell 菜单用于新建终端，支持系统默认、PowerShell、CMD、WSL、Bash、Zsh 和 Fish，具体可执行文件由 DSH 宿主环境解析。
 
+用鼠标选中终端文本后，松开鼠标即可复制到剪贴板，选区会保持高亮。
+
 | 操作 | Windows / Linux | macOS |
 | --- | --- | --- |
 | 展开或收起底栏 | Ctrl + Shift + &#96; | ⌘ + ⇧ + &#96; |
